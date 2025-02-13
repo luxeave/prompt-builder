@@ -5,6 +5,7 @@ export interface IStorage {
   getFilesByParentId(parentId: number | null): Promise<File[]>;
   deleteFile(id: number): Promise<void>;
   getFileByPath(path: string): Promise<File | undefined>;
+  getAllFiles(): Promise<File[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -20,7 +21,7 @@ export class MemStorage implements IStorage {
     const existing = Array.from(this.files.values()).find(
       f => f.path === insertFile.path
     );
-    
+
     if (existing) {
       const updated = { ...existing, ...insertFile };
       this.files.set(existing.id, updated);
@@ -47,6 +48,10 @@ export class MemStorage implements IStorage {
     return Array.from(this.files.values()).find(
       file => file.path === path
     );
+  }
+
+  async getAllFiles(): Promise<File[]> {
+    return Array.from(this.files.values());
   }
 }
 
