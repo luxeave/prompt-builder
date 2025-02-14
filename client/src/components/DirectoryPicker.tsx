@@ -8,10 +8,12 @@ import { apiRequest } from "@/lib/queryClient";
 export function DirectoryPicker() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const loadDirectory = useMutation({
     mutationFn: async (path: string) => {
-      await apiRequest("POST", "/api/directory/load", { path });
+      // Normalize path separators and remove any trailing slashes
+      const normalizedPath = path.replace(/\\/g, '/').replace(/\/$/, '');
+      await apiRequest("POST", "/api/directory/load", { path: normalizedPath });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/files"] });
@@ -22,7 +24,7 @@ export function DirectoryPicker() {
     },
     onError: (error) => {
       toast({
-        title: "Error",
+        title: "Error loading directory",
         description: String(error),
         variant: "destructive",
       });
@@ -37,23 +39,46 @@ export function DirectoryPicker() {
         className="flex-1"
         onKeyDown={(e) => {
           if (e.key === "Enter") {
-            loadDirectory.mutate(e.currentTarget.value);
+            const path = e.currentTarget.value.trim();
+            if (path) {
+              loadDirectory.mutate(path);
+            }
           }
         }}
       />
       <Button
         variant="outline"
         size="icon"
-        onClick={() => {
-          const input = document.createElement("input");
-          input.type = "file";
-          input.webkitdirectory = true;
-          input.onchange = () => {
-            if (input.files?.[0]) {
-              loadDirectory.mutate(input.files[0].path);
+        onClick={async () => {
+          try {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.webkitdirectory = true;
+
+            // Wrap file selection in a promise
+            const path = await new Promise<string>((resolve) => {
+              input.onchange = () => {
+                if (input.files?.[0]) {
+                  // Get the directory path from the first file
+                  const filePath = input.files[0].path;
+                  // Get the directory path by removing the filename
+                  const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+                  resolve(dirPath);
+                }
+              };
+              input.click();
+            });
+
+            if (path) {
+              loadDirectory.mutate(path);
             }
-          };
-          input.click();
+          } catch (error) {
+            toast({
+              title: "Error",
+              description: "Failed to select directory",
+              variant: "destructive",
+            });
+          }
         }}
       >
         <Folder className="h-4 w-4" />

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { directorySchema } from "@shared/schema";
+import { directorySchema, type File } from "@shared/schema";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -21,24 +21,29 @@ function generateTreeStructure(files: File[], parentId: number | null = null, de
 }
 
 async function scanDirectory(dirPath: string, parentId: number | null = null) {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    const stats = await fs.stat(fullPath);
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      const stats = await fs.stat(fullPath);
 
-    const file = await storage.upsertFile({
-      path: fullPath,
-      name: entry.name,
-      isDirectory: entry.isDirectory(),
-      size: stats.size,
-      lastModified: stats.mtime,
-      parentId
-    });
+      const file = await storage.upsertFile({
+        path: fullPath,
+        name: entry.name,
+        isDirectory: entry.isDirectory(),
+        size: entry.isDirectory() ? null : stats.size,
+        lastModified: stats.mtime,
+        parentId
+      });
 
-    if (entry.isDirectory()) {
-      await scanDirectory(fullPath, file.id);
+      if (entry.isDirectory()) {
+        await scanDirectory(fullPath, file.id);
+      }
     }
+  } catch (error) {
+    console.error(`Error scanning directory ${dirPath}:`, error);
+    throw error;
   }
 }
 
@@ -46,9 +51,24 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/directory/load", async (req, res) => {
     try {
       const { path: dirPath } = directorySchema.parse(req.body);
+
+      // Check if directory exists and is accessible
+      try {
+        await fs.access(dirPath);
+        const stats = await fs.stat(dirPath);
+        if (!stats.isDirectory()) {
+          throw new Error("Path is not a directory");
+        }
+      } catch (error) {
+        return res.status(400).json({ 
+          error: "Invalid directory path or directory not accessible" 
+        });
+      }
+
       await scanDirectory(dirPath);
       res.json({ success: true });
     } catch (error) {
+      console.error("Error loading directory:", error);
       res.status(400).json({ error: String(error) });
     }
   });
